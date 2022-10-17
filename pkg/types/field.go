@@ -82,7 +82,9 @@ func getDocString(cfg *config.Resource, f *Field, tfPath []string) string { //no
 			docString = getDescription(cfg.MetaResource.ArgumentDocs[match])
 		}
 	}
-	return docString
+	// double backticks are being transformed into a different sequence
+	// on Ubuntu containers as part of the CI pipelines.
+	return strings.ReplaceAll(docString, "``", "` `")
 }
 
 // NewField returns a constructed Field object.
