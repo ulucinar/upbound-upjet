@@ -204,6 +204,12 @@ func (sr *SharedProvider) Start() (string, error) { //nolint:gocyclo
 			log.Info("Native Terraform provider process error", "error", err)
 			errCh <- err
 		case <-sr.stopCh:
+			defer func() {
+				// we have observed a panic in k8s.io/utils/exec.Cmd.Stop()
+				if r := recover(); r != nil {
+					sr.logger.Info("Recovered from a panic in SharedProvider.Stop: %v", r)
+				}
+			}()
 			cmd.Stop()
 		}
 	}()

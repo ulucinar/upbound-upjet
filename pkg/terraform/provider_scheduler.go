@@ -23,7 +23,11 @@ import (
 
 type ProviderHandle string
 
-const InvalidProviderHandle ProviderHandle = ""
+const (
+	InvalidProviderHandle ProviderHandle = ""
+
+	ttlBudget = 0.1
+)
 
 type ProviderScheduler interface {
 	Start(ProviderHandle) (InUse, string, error)
@@ -99,16 +103,22 @@ func (s *SharedProviderScheduler) Start(h ProviderHandle) (InUse, string, error)
 	defer s.mu.Unlock()
 
 	r := s.runners[h]
+	logger := s.logger.WithValues("handle", h, "ttl", s.ttl, "ttlBudget", ttlBudget)
 	switch {
 	case r != nil && (r.invocationCount < s.ttl || r.inUse > 0):
-		s.logger.Debug("Reusing the provider runner", "handle", h, "invocationCount", r.invocationCount, "ttl", s.ttl)
+		if r.invocationCount > int(float64(s.ttl)*(1+ttlBudget)) {
+			logger.Debug("Reuse budget has been exceeded. Caller will need to retry.")
+			return nil, "", errors.Errorf("native provider reuse budget has been exceeded: invocationCount: %d, ttl: %d", r.invocationCount, s.ttl)
+		}
+
+		logger.Debug("Reusing the provider runner", "invocationCount", r.invocationCount)
 		rc, err := r.Start()
 		return &providerInUse{
 			scheduler: s,
 			handle:    h,
 		}, rc, errors.Wrapf(err, "cannot use already started provider with handle: %s", h)
 	case r != nil:
-		s.logger.Debug("The provider runner has expired. Attempting to stop...", "handle", h, "invocationCount", r.invocationCount, "ttl", s.ttl)
+		logger.Debug("The provider runner has expired. Attempting to stop...", "invocationCount", r.invocationCount)
 		if err := r.Stop(); err != nil {
 			return nil, "", errors.Wrapf(err, "cannot schedule a new Terraform provider for handle: %s", h)
 		}
@@ -118,8 +128,9 @@ func (s *SharedProviderScheduler) Start(h ProviderHandle) (InUse, string, error)
 	r = &schedulerEntry{
 		ProviderRunner: runner,
 	}
-	runner.logger = s.logger.WithValues("handle", h)
+	runner.logger = logger
 	s.runners[h] = r
+	logger.Debug("Starting new shared provider...")
 	rc, err := s.runners[h].Start()
 	return &providerInUse{
 		scheduler: s,
