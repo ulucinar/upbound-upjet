@@ -16,6 +16,7 @@ package terraform
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -34,6 +35,8 @@ import (
 
 const (
 	defaultAsyncTimeout = 1 * time.Hour
+	envReattachConfig   = "TF_REATTACH_PROVIDERS"
+	fmtEnv              = "%s=%s"
 )
 
 // WorkspaceOption allows you to configure Workspace objects.
@@ -97,6 +100,10 @@ type CallbackFn func(error, context.Context) error
 type Workspace struct {
 	// LastOperation contains information about the last operation performed.
 	LastOperation *Operation
+	// ProviderHandle is the handle of the associated native Terraform provider
+	// computed from the generated provider resource configuration block
+	// of the Terraform workspace.
+	ProviderHandle ProviderHandle
 
 	dir string
 	env []string
@@ -107,6 +114,20 @@ type Workspace struct {
 	fs            afero.Afero
 
 	filterFn func(string) string
+}
+
+func (w *Workspace) UseSharedProvider(inuse InUse, attachmentConfig string) {
+	// remove existing reattach configs
+	env := make([]string, 0, len(w.env))
+	prefix := fmt.Sprintf(fmtEnv, envReattachConfig, "")
+	for _, e := range w.env {
+		if !strings.HasPrefix(e, prefix) {
+			env = append(env, e)
+		}
+	}
+	env = append(env, prefix+attachmentConfig)
+	w.env = env
+	w.providerInUse = inuse
 }
 
 // ApplyAsync makes a terraform apply call without blocking and calls the given

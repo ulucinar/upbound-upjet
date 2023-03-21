@@ -31,12 +31,21 @@ const (
 
 type ProviderScheduler interface {
 	Start(ProviderHandle) (InUse, string, error)
+	Stop(ProviderHandle) error
 }
 
 type InUse interface {
 	Increment() error
 	Decrement()
 }
+
+type noopInUse struct{}
+
+func (noopInUse) Increment() error {
+	return nil
+}
+
+func (noopInUse) Decrement() {}
 
 type NoOpProviderScheduler struct{}
 
@@ -45,7 +54,11 @@ func NewNoOpProviderScheduler() NoOpProviderScheduler {
 }
 
 func (NoOpProviderScheduler) Start(ProviderHandle) (InUse, string, error) {
-	return nil, "", nil
+	return noopInUse{}, "", nil
+}
+
+func (NoOpProviderScheduler) Stop(ProviderHandle) error {
+	return nil
 }
 
 type schedulerEntry struct {
@@ -81,14 +94,14 @@ func (p *providerInUse) Decrement() {
 }
 
 type SharedProviderScheduler struct {
-	runnerOpts []SharedGRPCRunnerOption
+	runnerOpts []SharedProviderOption
 	runners    map[ProviderHandle]*schedulerEntry
 	ttl        int
 	mu         *sync.Mutex
 	logger     logging.Logger
 }
 
-func NewSharedProviderScheduler(l logging.Logger, ttl int, opts ...SharedGRPCRunnerOption) *SharedProviderScheduler {
+func NewSharedProviderScheduler(l logging.Logger, ttl int, opts ...SharedProviderOption) *SharedProviderScheduler {
 	return &SharedProviderScheduler{
 		runnerOpts: opts,
 		mu:         &sync.Mutex{},
@@ -99,11 +112,11 @@ func NewSharedProviderScheduler(l logging.Logger, ttl int, opts ...SharedGRPCRun
 }
 
 func (s *SharedProviderScheduler) Start(h ProviderHandle) (InUse, string, error) {
+	logger := s.logger.WithValues("handle", h, "ttl", s.ttl, "ttlBudget", ttlBudget)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	r := s.runners[h]
-	logger := s.logger.WithValues("handle", h, "ttl", s.ttl, "ttlBudget", ttlBudget)
 	switch {
 	case r != nil && (r.invocationCount < s.ttl || r.inUse > 0):
 		if r.invocationCount > int(float64(s.ttl)*(1+ttlBudget)) {
@@ -120,7 +133,7 @@ func (s *SharedProviderScheduler) Start(h ProviderHandle) (InUse, string, error)
 	case r != nil:
 		logger.Debug("The provider runner has expired. Attempting to stop...", "invocationCount", r.invocationCount)
 		if err := r.Stop(); err != nil {
-			return nil, "", errors.Wrapf(err, "cannot schedule a new Terraform provider for handle: %s", h)
+			return nil, "", errors.Wrapf(err, "cannot schedule a new shared provider for handle: %s", h)
 		}
 	}
 
@@ -135,5 +148,33 @@ func (s *SharedProviderScheduler) Start(h ProviderHandle) (InUse, string, error)
 	return &providerInUse{
 		scheduler: s,
 		handle:    h,
-	}, rc, errors.Wrapf(err, "cannot start the scheduled provider runner for handle: %s", h)
+	}, rc, errors.Wrapf(err, "cannot start the shared provider runner for handle: %s", h)
+}
+
+func (s *SharedProviderScheduler) Stop(ProviderHandle) error {
+	// noop
+	return nil
+}
+
+type WorkspaceProviderScheduler struct {
+	runner ProviderRunner
+	logger logging.Logger
+}
+
+func NewWorkspaceProviderScheduler(l logging.Logger, opts ...SharedProviderOption) *WorkspaceProviderScheduler {
+	return &WorkspaceProviderScheduler{
+		logger: l,
+		runner: NewSharedProvider(opts...),
+	}
+}
+
+func (s *WorkspaceProviderScheduler) Start(ProviderHandle) (InUse, string, error) {
+	s.logger.Debug("Starting workspace scoped shared provider runner...")
+	reattachConfig, err := s.runner.Start()
+	return noopInUse{}, reattachConfig, errors.Wrap(err, "cannot start a workspace provider runner")
+}
+
+func (s *WorkspaceProviderScheduler) Stop(ProviderHandle) error {
+	s.logger.Debug("Stopping workspace scoped shared provider runner...")
+	return errors.Wrap(s.runner.Stop(), "cannot stop a workspace provider runner")
 }
