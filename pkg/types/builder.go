@@ -94,7 +94,8 @@ func (g *Builder) buildResource(res *schema.Resource, cfg *config.Resource, tfPa
 	r := &resource{}
 	for _, snakeFieldName := range keys {
 		var reference *config.Reference
-		ref, ok := cfg.References[fieldPath(append(tfPath, snakeFieldName))]
+		cPath := fieldPath(append(tfPath, snakeFieldName))
+		ref, ok := cfg.References[cPath]
 		// if a reference is configured and the field does not belong to status
 		if ok && !IsObservation(res.Schema[snakeFieldName]) {
 			reference = &ref
@@ -122,7 +123,7 @@ func (g *Builder) buildResource(res *schema.Resource, cfg *config.Resource, tfPa
 				return nil, nil, nil, err
 			}
 		}
-		f.AddToResource(g, r, typeNames)
+		f.AddToResource(g, r, typeNames, cfg.SchemaElementOptions.AddToObservation(cPath))
 	}
 
 	paramType, obsType, initType := g.AddToBuilder(typeNames, r)
