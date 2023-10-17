@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
+	"github.com/hashicorp/terraform-plugin-sdk/v2/terraform"
 	"github.com/pkg/errors"
 	"k8s.io/apimachinery/pkg/util/json"
 	"k8s.io/apimachinery/pkg/util/sets"
@@ -335,7 +336,16 @@ type Resource struct {
 	// configuration parameters into their deserialized configuration maps,
 	// if the deserialization skips certain fields.
 	TerraformConfigurationInjector ConfigurationInjector
+
+	// TerraformCustomDiff allows a resource.Terraformed to customize how its
+	// Terraform InstanceDiff is computed during reconciliation.
+	TerraformCustomDiff CustomDiff
 }
+
+// CustomDiff customizes the computed Terraform InstanceDiff. This can be used
+// in cases where, for example, changes in a certain argument should just be
+// dismissed. The new InstanceDiff is returned along with any errors.
+type CustomDiff func(diff *terraform.InstanceDiff) (*terraform.InstanceDiff, error)
 
 // ConfigurationInjector is a function that injects Terraform configuration
 // values from the specified managed resource into the specified configuration
