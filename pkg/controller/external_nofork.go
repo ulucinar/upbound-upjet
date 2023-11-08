@@ -187,7 +187,21 @@ func (c *NoForkConnector) applyStateFuncToParam(sc *schema.Schema, param any) an
 				pArray[i] = c.processParamsWithStateFunc(setResource.Schema, resParam)
 			}
 		}
-	case schema.TypeBool, schema.TypeInt, schema.TypeFloat, schema.TypeString:
+	case schema.TypeString:
+		// For String types check if it is an HCL string and process
+		if isHCLSnippetPattern.MatchString(param.(string)) {
+			hclProccessedParam, err := processHCLParam(param.(string))
+			if err != nil {
+				c.logger.Info("could not process param, returning original", "param", sc.GoString())
+				return param
+			}
+			param = hclProccessedParam
+		}
+		if sc.StateFunc != nil {
+			return sc.StateFunc(param)
+		}
+		return param
+	case schema.TypeBool, schema.TypeInt, schema.TypeFloat:
 		if sc.StateFunc != nil {
 			return sc.StateFunc(param)
 		}
