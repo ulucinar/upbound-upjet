@@ -122,7 +122,7 @@ type hclBlock struct {
 
 // isHCLSnippetPattern is the regex pattern for determining whether
 // the param is an HCL template
-var isHCLSnippetPattern = regexp.MustCompile(`\$\{\w+.*\(\}`)
+var isHCLSnippetPattern = regexp.MustCompile(`\$\{\w+\s*\([\S\s]*\}`)
 
 // processHCLParam processes the given string parameter
 // with HCL format and including HCL functions,
