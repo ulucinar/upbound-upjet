@@ -111,6 +111,7 @@ var evalCtx = &hcl.EvalContext{
 		"yamldecode":      ctyyaml.YAMLDecodeFunc,
 		"yamlencode":      ctyyaml.YAMLEncodeFunc,
 		"base64encode":    Base64EncodeFunc,
+		"base64decode":    Base64DecodeFunc,
 	},
 }
 
