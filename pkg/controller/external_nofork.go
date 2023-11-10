@@ -192,10 +192,10 @@ func (c *NoForkConnector) applyStateFuncToParam(sc *schema.Schema, param any) an
 		if isHCLSnippetPattern.MatchString(param.(string)) {
 			hclProccessedParam, err := processHCLParam(param.(string))
 			if err != nil {
-				c.logger.Info("could not process param, returning original", "param", sc.GoString())
-				return param
+				c.logger.Debug("could not process param, returning original", "param", sc.GoString())
+			} else {
+				param = hclProccessedParam
 			}
-			param = hclProccessedParam
 		}
 		if sc.StateFunc != nil {
 			return sc.StateFunc(param)
