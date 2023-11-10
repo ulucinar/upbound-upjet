@@ -1,8 +1,16 @@
+// SPDX-FileCopyrightText: 2023 The Crossplane Authors <https://crossplane.io>
+//
+// SPDX-License-Identifier: Apache-2.0
+
 package controller
 
 import (
 	"encoding/base64"
 	"fmt"
+	"log"
+	"regexp"
+	"unicode/utf8"
+
 	"github.com/hashicorp/hcl/v2"
 	"github.com/hashicorp/hcl/v2/gohcl"
 	"github.com/hashicorp/hcl/v2/hclparse"
@@ -10,9 +18,6 @@ import (
 	"github.com/zclconf/go-cty/cty"
 	"github.com/zclconf/go-cty/cty/function"
 	ctyfuncstdlib "github.com/zclconf/go-cty/cty/function/stdlib"
-	"log"
-	"regexp"
-	"unicode/utf8"
 )
 
 var Base64DecodeFunc = function.New(&function.Spec{
@@ -31,7 +36,7 @@ var Base64DecodeFunc = function.New(&function.Spec{
 		if err != nil {
 			return cty.UnknownVal(cty.String), fmt.Errorf("failed to decode base64 data %s", s)
 		}
-		if !utf8.Valid([]byte(sDec)) {
+		if !utf8.Valid(sDec) {
 			log.Printf("[DEBUG] the result of decoding the provided string is not valid UTF-8: %s", s)
 			return cty.UnknownVal(cty.String), fmt.Errorf("the result of decoding the provided string is not valid UTF-8")
 		}
