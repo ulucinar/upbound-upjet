@@ -18,10 +18,12 @@ import (
 
 // NewConversionHubGenerator returns a new ConversionHubGenerator.
 func NewConversionHubGenerator(pkg *types.Package, rootDir, group, version string) *ConversionHubGenerator {
+	groupPrefix := strings.ToLower(strings.Split(group, ".")[0])
 	return &ConversionHubGenerator{
-		LocalDirectoryPath: filepath.Join(rootDir, "apis", strings.ToLower(strings.Split(group, ".")[0]), version),
+		LocalDirectoryPath: filepath.Join(rootDir, "apis", groupPrefix, version),
 		LicenseHeaderPath:  filepath.Join(rootDir, "hack", "boilerplate.go.txt"),
 		pkg:                pkg,
+		groupPrefix:        groupPrefix,
 	}
 }
 
@@ -31,7 +33,8 @@ type ConversionHubGenerator struct {
 	LocalDirectoryPath string
 	LicenseHeaderPath  string
 
-	pkg *types.Package
+	pkg         *types.Package
+	groupPrefix string
 }
 
 // Generate writes generated conversion.Hub interface functions
@@ -42,7 +45,8 @@ func (cg *ConversionHubGenerator) Generate(cfgs []*terraformedInput, apiVersion 
 	)
 	filePath := filepath.Join(cg.LocalDirectoryPath, "zz_generated.conversion_hubs.go")
 	vars := map[string]any{
-		"APIVersion": apiVersion,
+		"APIVersion":  apiVersion,
+		"GroupPrefix": cg.groupPrefix,
 	}
 	resources := make([]map[string]any, len(cfgs))
 	index := 0

@@ -24,12 +24,14 @@ var (
 
 // NewConversionSpokeGenerator returns a new ConversionSpokeGenerator.
 func NewConversionSpokeGenerator(pkg *types.Package, rootDir, group, version string) *ConversionSpokeGenerator {
+	groupPrefix := strings.ToLower(strings.Split(group, ".")[0])
 	return &ConversionSpokeGenerator{
-		LocalDirectoryPath: filepath.Join(rootDir, "apis", strings.ToLower(strings.Split(group, ".")[0])),
+		LocalDirectoryPath: filepath.Join(rootDir, "apis", groupPrefix),
 		LicenseHeaderPath:  filepath.Join(rootDir, "hack", "boilerplate.go.txt"),
 		SpokeVersionsMap:   make(map[string][]string),
 		pkg:                pkg,
 		version:            version,
+		groupPrefix:        groupPrefix,
 	}
 }
 
@@ -40,8 +42,9 @@ type ConversionSpokeGenerator struct {
 	LicenseHeaderPath  string
 	SpokeVersionsMap   map[string][]string
 
-	pkg     *types.Package
-	version string
+	pkg         *types.Package
+	version     string
+	groupPrefix string
 }
 
 // Generate writes generated conversion.Convertible interface functions
@@ -63,7 +66,8 @@ func (cg *ConversionSpokeGenerator) Generate(cfgs []*terraformedInput) error { /
 		)
 		filePath := filepath.Join(cg.LocalDirectoryPath, e.Name(), "zz_generated.conversion_spokes.go")
 		vars := map[string]any{
-			"APIVersion": e.Name(),
+			"APIVersion":  e.Name(),
+			"GroupPrefix": cg.groupPrefix,
 		}
 
 		var resources []map[string]any

@@ -19,10 +19,12 @@ import (
 
 // NewTerraformedGenerator returns a new TerraformedGenerator.
 func NewTerraformedGenerator(pkg *types.Package, rootDir, group, version string) *TerraformedGenerator {
+	groupPrefix := strings.ToLower(strings.Split(group, ".")[0])
 	return &TerraformedGenerator{
-		LocalDirectoryPath: filepath.Join(rootDir, "apis", strings.ToLower(strings.Split(group, ".")[0]), version),
+		LocalDirectoryPath: filepath.Join(rootDir, "apis", groupPrefix, version),
 		LicenseHeaderPath:  filepath.Join(rootDir, "hack", "boilerplate.go.txt"),
 		pkg:                pkg,
+		groupPrefix:        groupPrefix,
 	}
 }
 
@@ -32,7 +34,8 @@ type TerraformedGenerator struct {
 	LocalDirectoryPath string
 	LicenseHeaderPath  string
 
-	pkg *types.Package
+	pkg         *types.Package
+	groupPrefix string
 }
 
 // Generate writes generated Terraformed interface functions
@@ -49,6 +52,7 @@ func (tg *TerraformedGenerator) Generate(cfgs []*terraformedInput, apiVersion st
 		}
 		vars["CRD"] = map[string]string{
 			"Kind":               cfg.Kind,
+			"GroupPrefix":        tg.groupPrefix,
 			"ParametersTypeName": cfg.ParametersTypeName,
 		}
 		vars["Terraform"] = map[string]any{

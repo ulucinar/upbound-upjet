@@ -45,7 +45,8 @@ func (cg *ControllerGenerator) Generate(cfg *config.Resource, typesPkgPath strin
 	vars := map[string]any{
 		"Package": strings.ToLower(cfg.Kind),
 		"CRD": map[string]string{
-			"Kind": cfg.Kind,
+			"Kind":        cfg.Kind,
+			"GroupPrefix": strings.ToLower(strings.Split(cg.Group, ".")[0]),
 		},
 		"DisableNameInitializer":            cfg.ExternalName.DisableNameInitializer,
 		"TypePackageAlias":                  ctrlFile.Imports.UsePackage(typesPkgPath),

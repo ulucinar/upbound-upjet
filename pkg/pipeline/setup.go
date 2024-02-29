@@ -62,8 +62,8 @@ func (sg *ProviderGenerator) Generate(versionPkgMap map[string][]string, mainTem
 	return nil
 }
 
-func generateProviderMain(providerPath, group string, t *template.Template) error {
-	f := filepath.Join(providerPath, group)
+func generateProviderMain(providerPath, groupPrefix string, t *template.Template) error {
+	f := filepath.Join(providerPath, groupPrefix)
 	if err := os.MkdirAll(f, 0750); err != nil {
 		return errors.Wrapf(err, "failed to mkdir provider main program path: %s", f)
 	}
@@ -77,7 +77,7 @@ func generateProviderMain(providerPath, group string, t *template.Template) erro
 		}
 	}()
 	if err := t.Execute(m, map[string]any{
-		"Group": group,
+		"GroupPrefix": groupPrefix,
 	}); err != nil {
 		return errors.Wrap(err, "failed to execute provider main program template")
 	}
@@ -99,8 +99,9 @@ func (sg *ProviderGenerator) generate(group string, versionPkgList []string) err
 		g = "_" + group
 	}
 	vars := map[string]any{
-		"Aliases": aliases,
-		"Group":   g,
+		"Aliases":     aliases,
+		"Group":       g,
+		"GroupPrefix": group,
 	}
 	filePath := ""
 	if len(group) == 0 {

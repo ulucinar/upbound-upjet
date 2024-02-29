@@ -87,6 +87,7 @@ func (cg *CRDGenerator) Generate(cfg *config.Resource) (string, error) {
 		"CRD": map[string]string{
 			"APIVersion":       cfg.Version,
 			"Group":            cg.Group,
+			"GroupPrefix":      strings.ToLower(strings.Split(cg.Group, ".")[0]),
 			"Kind":             cfg.Kind,
 			"ForProviderType":  gen.ForProviderType.Obj().Name(),
 			"InitProviderType": gen.InitProviderType.Obj().Name(),
