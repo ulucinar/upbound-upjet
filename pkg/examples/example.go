@@ -46,6 +46,7 @@ type Generator struct {
 	configResources    map[string]*config.Resource
 	resources          map[string]*reference.PavedWithManifest
 	addExampleMetadata bool
+	generateReferences bool
 }
 
 // NewGenerator returns a configured Generator
@@ -57,6 +58,7 @@ func NewGenerator(rootDir, modulePath, shortName string, configResources map[str
 		},
 		rootDir:            rootDir,
 		addExampleMetadata: true,
+		generateReferences: true,
 		configResources:    configResources,
 		resources:          make(map[string]*reference.PavedWithManifest),
 	}
@@ -75,6 +77,14 @@ type GeneratorOption func(*Generator)
 func WithAddExampleMetadata(addMetadata bool) GeneratorOption {
 	return func(g *Generator) {
 		g.addExampleMetadata = addMetadata
+	}
+}
+
+// WithGenerateReferences configures whether cross-resource references should
+// be generated in the example manifests.
+func WithGenerateReferences(generateRefs bool) GeneratorOption {
+	return func(g *Generator) {
+		g.generateReferences = generateRefs
 	}
 }
 
@@ -116,7 +126,7 @@ func (eg *Generator) StoreExamples() error { // nolint:gocyclo
 				// e.g. meta.upbound.io/example-id: ec2/v1beta1/instance
 				eGroup := fmt.Sprintf("%s/%s/%s", strings.ToLower(r.ShortGroup), r.Version, strings.ToLower(r.Kind))
 				eName := reference.NewRefPartsFromResourceName(dn).ExampleName
-				pmd := paveCRManifest(exampleParams, dr.Config, eName, dr.Group, dr.Version, eGroup, eg.addExampleMetadata)
+				pmd := paveCRManifest(exampleParams, dr.Config, eName, dr.Group, dr.Version, eGroup, eg.addExampleMetadata, eg.generateReferences)
 				if err := eg.writeManifest(&buff, pmd, context, eName); err != nil {
 					return errors.Wrapf(err, "cannot store example manifest for %s dependency: %s", rn, dn)
 				}
@@ -133,10 +143,10 @@ func (eg *Generator) StoreExamples() error { // nolint:gocyclo
 	return nil
 }
 
-func paveCRManifest(exampleParams map[string]any, r *config.Resource, eName, group, version, eGroup string, addExampleLabel bool) *reference.PavedWithManifest {
+func paveCRManifest(exampleParams map[string]any, r *config.Resource, eName, group, version, eGroup string, addExampleLabel, generateRefs bool) *reference.PavedWithManifest {
 	delete(exampleParams, "depends_on")
 	delete(exampleParams, "lifecycle")
-	transformFields(r, exampleParams, r.ExternalName.OmittedFields, "")
+	transformFields(r, exampleParams, r.ExternalName.OmittedFields, "", generateRefs)
 	metadata := map[string]any{}
 	if addExampleLabel {
 		metadata["labels"] = map[string]string{
@@ -202,7 +212,7 @@ func (eg *Generator) Generate(group, version string, r *config.Resource) error {
 	groupPrefix := strings.ToLower(strings.Split(group, ".")[0])
 	// e.g. gvk = ec2/v1beta1/instance
 	gvk := fmt.Sprintf("%s/%s/%s", groupPrefix, version, strings.ToLower(r.Kind))
-	pm := paveCRManifest(rm.Examples[0].Paved.UnstructuredContent(), r, rm.Examples[0].Name, group, version, gvk, eg.addExampleMetadata)
+	pm := paveCRManifest(rm.Examples[0].Paved.UnstructuredContent(), r, rm.Examples[0].Name, group, version, gvk, eg.addExampleMetadata, eg.generateReferences)
 	manifestDir := filepath.Join(eg.rootDir, "examples-generated", groupPrefix, r.Version)
 	pm.ManifestPath = filepath.Join(manifestDir, fmt.Sprintf("%s.yaml", strings.ToLower(r.Kind)))
 	eg.resources[fmt.Sprintf("%s.%s", r.Name, reference.Wildcard)] = pm
@@ -228,7 +238,7 @@ func isStatus(r *config.Resource, attr string) bool {
 	return tjtypes.IsObservation(s)
 }
 
-func transformFields(r *config.Resource, params map[string]any, omittedFields []string, namePrefix string) { // nolint:gocyclo
+func transformFields(r *config.Resource, params map[string]any, omittedFields []string, namePrefix string, generateRefs bool) { // nolint:gocyclo
 	for n := range params {
 		hName := getHierarchicalName(namePrefix, n)
 		if isStatus(r, hName) {
@@ -246,7 +256,7 @@ func transformFields(r *config.Resource, params map[string]any, omittedFields []
 	for n, v := range params {
 		switch pT := v.(type) {
 		case map[string]any:
-			transformFields(r, pT, omittedFields, getHierarchicalName(namePrefix, n))
+			transformFields(r, pT, omittedFields, getHierarchicalName(namePrefix, n), generateRefs)
 
 		case []any:
 			for _, e := range pT {
@@ -254,7 +264,7 @@ func transformFields(r *config.Resource, params map[string]any, omittedFields []
 				if !ok {
 					continue
 				}
-				transformFields(r, eM, omittedFields, getHierarchicalName(namePrefix, n))
+				transformFields(r, eM, omittedFields, getHierarchicalName(namePrefix, n), generateRefs)
 			}
 		}
 	}
@@ -278,6 +288,10 @@ func transformFields(r *config.Resource, params map[string]any, omittedFields []
 				"key":       secretKey,
 			})
 		case r.References[fieldPath] != config.Reference{}:
+			if !generateRefs {
+				params[fn.LowerCamelComputed] = v
+				continue
+			}
 			switch v.(type) {
 			case []any:
 				l := sch.Type == schema.TypeList || sch.Type == schema.TypeSet
