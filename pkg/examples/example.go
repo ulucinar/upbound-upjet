@@ -42,21 +42,39 @@ const (
 // Generates example manifests for Terraform resources under examples-generated.
 type Generator struct {
 	reference.Injector
-	rootDir         string
-	configResources map[string]*config.Resource
-	resources       map[string]*reference.PavedWithManifest
+	rootDir            string
+	configResources    map[string]*config.Resource
+	resources          map[string]*reference.PavedWithManifest
+	addExampleMetadata bool
 }
 
 // NewGenerator returns a configured Generator
-func NewGenerator(rootDir, modulePath, shortName string, configResources map[string]*config.Resource) *Generator {
-	return &Generator{
+func NewGenerator(rootDir, modulePath, shortName string, configResources map[string]*config.Resource, opts ...GeneratorOption) *Generator {
+	g := &Generator{
 		Injector: reference.Injector{
 			ModulePath:        modulePath,
 			ProviderShortName: shortName,
 		},
-		rootDir:         rootDir,
-		configResources: configResources,
-		resources:       make(map[string]*reference.PavedWithManifest),
+		rootDir:            rootDir,
+		addExampleMetadata: true,
+		configResources:    configResources,
+		resources:          make(map[string]*reference.PavedWithManifest),
+	}
+	for _, o := range opts {
+		o(g)
+	}
+	return g
+}
+
+// GeneratorOption is a configuration option for the constructed Generator.
+type GeneratorOption func(*Generator)
+
+// WithAddExampleMetadata configures whether the example metadata
+// (labels & metadata) should be added to the generated manifests.
+// The default is to add the metadata (true).
+func WithAddExampleMetadata(addMetadata bool) GeneratorOption {
+	return func(g *Generator) {
+		g.addExampleMetadata = addMetadata
 	}
 }
 
@@ -72,7 +90,7 @@ func (eg *Generator) StoreExamples() error { // nolint:gocyclo
 		if err := eg.writeManifest(&buff, pm, &reference.ResolutionContext{
 			WildcardNames: true,
 			Context:       eg.resources,
-		}); err != nil {
+		}, ""); err != nil {
 			return errors.Wrapf(err, "cannot store example manifest for resource: %s", rn)
 		}
 		if r, ok := eg.configResources[reference.NewRefPartsFromResourceName(rn).Resource]; ok && r.MetaResource != nil {
@@ -97,9 +115,9 @@ func (eg *Generator) StoreExamples() error { // nolint:gocyclo
 				}
 				// e.g. meta.upbound.io/example-id: ec2/v1beta1/instance
 				eGroup := fmt.Sprintf("%s/%s/%s", strings.ToLower(r.ShortGroup), r.Version, strings.ToLower(r.Kind))
-				pmd := paveCRManifest(exampleParams, dr.Config,
-					reference.NewRefPartsFromResourceName(dn).ExampleName, dr.Group, dr.Version, eGroup)
-				if err := eg.writeManifest(&buff, pmd, context); err != nil {
+				eName := reference.NewRefPartsFromResourceName(dn).ExampleName
+				pmd := paveCRManifest(exampleParams, dr.Config, eName, dr.Group, dr.Version, eGroup, eg.addExampleMetadata)
+				if err := eg.writeManifest(&buff, pmd, context, eName); err != nil {
 					return errors.Wrapf(err, "cannot store example manifest for %s dependency: %s", rn, dn)
 				}
 			}
@@ -115,17 +133,18 @@ func (eg *Generator) StoreExamples() error { // nolint:gocyclo
 	return nil
 }
 
-func paveCRManifest(exampleParams map[string]any, r *config.Resource, eName, group, version, eGroup string) *reference.PavedWithManifest {
+func paveCRManifest(exampleParams map[string]any, r *config.Resource, eName, group, version, eGroup string, addExampleLabel bool) *reference.PavedWithManifest {
 	delete(exampleParams, "depends_on")
 	delete(exampleParams, "lifecycle")
 	transformFields(r, exampleParams, r.ExternalName.OmittedFields, "")
-	metadata := map[string]any{
-		"labels": map[string]string{
+	metadata := map[string]any{}
+	if addExampleLabel {
+		metadata["labels"] = map[string]string{
 			labelExampleName: eName,
-		},
-		"annotations": map[string]string{
+		}
+		metadata["annotations"] = map[string]string{
 			annotationExampleGroup: eGroup,
-		},
+		}
 	}
 	example := map[string]any{
 		"apiVersion": fmt.Sprintf("%s/%s", group, version),
@@ -144,6 +163,7 @@ func paveCRManifest(exampleParams map[string]any, r *config.Resource, eName, gro
 		Config:       r,
 		Group:        group,
 		Version:      version,
+		ExampleName:  dns1123Name(eName),
 	}
 }
 
@@ -151,15 +171,13 @@ func dns1123Name(name string) string {
 	return strings.ReplaceAll(strings.ToLower(name), "_", "-")
 }
 
-func (eg *Generator) writeManifest(writer io.Writer, pm *reference.PavedWithManifest, resolutionContext *reference.ResolutionContext) error {
+func (eg *Generator) writeManifest(writer io.Writer, pm *reference.PavedWithManifest, resolutionContext *reference.ResolutionContext, nameOverride string) error {
 	if err := eg.ResolveReferencesOfPaved(pm, resolutionContext); err != nil {
 		return errors.Wrap(err, "cannot resolve references of resource")
 	}
-	labels, err := pm.Paved.GetValue("metadata.labels")
-	if err != nil {
-		return errors.Wrap(err, `cannot get "metadata.labels" from paved`)
+	if nameOverride != "" {
+		pm.ExampleName = dns1123Name(nameOverride)
 	}
-	pm.ExampleName = dns1123Name(labels.(map[string]string)[labelExampleName])
 	if err := pm.Paved.SetValue("metadata.name", pm.ExampleName); err != nil {
 		return errors.Wrapf(err, `cannot set "metadata.name" for resource %q:%s`, pm.Config.Name, pm.ExampleName)
 	}
@@ -184,7 +202,7 @@ func (eg *Generator) Generate(group, version string, r *config.Resource) error {
 	groupPrefix := strings.ToLower(strings.Split(group, ".")[0])
 	// e.g. gvk = ec2/v1beta1/instance
 	gvk := fmt.Sprintf("%s/%s/%s", groupPrefix, version, strings.ToLower(r.Kind))
-	pm := paveCRManifest(rm.Examples[0].Paved.UnstructuredContent(), r, rm.Examples[0].Name, group, version, gvk)
+	pm := paveCRManifest(rm.Examples[0].Paved.UnstructuredContent(), r, rm.Examples[0].Name, group, version, gvk, eg.addExampleMetadata)
 	manifestDir := filepath.Join(eg.rootDir, "examples-generated", groupPrefix, r.Version)
 	pm.ManifestPath = filepath.Join(manifestDir, fmt.Sprintf("%s.yaml", strings.ToLower(r.Kind)))
 	eg.resources[fmt.Sprintf("%s.%s", r.Name, reference.Wildcard)] = pm
