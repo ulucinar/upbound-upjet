@@ -47,6 +47,8 @@ type Generator struct {
 	resources          map[string]*reference.PavedWithManifest
 	addExampleMetadata bool
 	generateReferences bool
+	manifestPath       string
+	appendFile         bool
 }
 
 // NewGenerator returns a configured Generator
@@ -88,8 +90,24 @@ func WithGenerateReferences(generateRefs bool) GeneratorOption {
 	}
 }
 
-// StoreExamples stores the generated example manifests under examples-generated in
-// their respective API groups.
+// WithManifestPath configures the path where the generated manifest will be
+// stored.
+func WithManifestPath(path string) GeneratorOption {
+	return func(g *Generator) {
+		g.manifestPath = path
+	}
+}
+
+// WithAppendFile configures the example generation pipeline to append to the
+// manifest files instead of overwriting them.
+func WithAppendFile(appendFile bool) GeneratorOption {
+	return func(g *Generator) {
+		g.appendFile = appendFile
+	}
+}
+
+// StoreExamples stores the generated example manifests under
+// examples-generated in their respective API groups.
 func (eg *Generator) StoreExamples() error { // nolint:gocyclo
 	for rn, pm := range eg.resources {
 		manifestDir := filepath.Dir(pm.ManifestPath)
@@ -126,29 +144,40 @@ func (eg *Generator) StoreExamples() error { // nolint:gocyclo
 				// e.g. meta.upbound.io/example-id: ec2/v1beta1/instance
 				eGroup := fmt.Sprintf("%s/%s/%s", strings.ToLower(r.ShortGroup), r.Version, strings.ToLower(r.Kind))
 				eName := reference.NewRefPartsFromResourceName(dn).ExampleName
-				pmd := paveCRManifest(exampleParams, dr.Config, eName, dr.Group, dr.Version, eGroup, eg.addExampleMetadata, eg.generateReferences)
+				pmd := eg.paveCRManifest(exampleParams, dr.Config, eName, dr.Group, dr.Version, eGroup)
 				if err := eg.writeManifest(&buff, pmd, context, eName); err != nil {
 					return errors.Wrapf(err, "cannot store example manifest for %s dependency: %s", rn, dn)
 				}
 			}
 		}
 
-		newBuff := bytes.TrimSuffix(buff.Bytes(), []byte("\n---\n\n"))
+		newBuff := buff.Bytes()
+		if !eg.appendFile {
+			newBuff = bytes.TrimSuffix(newBuff, []byte("\n---\n\n"))
+		}
 
 		// no sensitive info in the example manifest
-		if err := os.WriteFile(pm.ManifestPath, newBuff, 0600); err != nil {
+		mode := os.O_CREATE | os.O_WRONLY
+		if eg.appendFile {
+			mode = mode | os.O_APPEND
+		}
+		f, err := os.OpenFile(pm.ManifestPath, mode, 0600)
+		if err != nil {
+			return errors.Wrapf(err, "cannot open the example manifest file %s for resource %s", pm.ManifestPath, rn)
+		}
+		if _, err := f.Write(newBuff); err != nil {
 			return errors.Wrapf(err, "cannot write example manifest file %s for resource %s", pm.ManifestPath, rn)
 		}
 	}
 	return nil
 }
 
-func paveCRManifest(exampleParams map[string]any, r *config.Resource, eName, group, version, eGroup string, addExampleLabel, generateRefs bool) *reference.PavedWithManifest {
+func (eg *Generator) paveCRManifest(exampleParams map[string]any, r *config.Resource, eName, group, version, eGroup string) *reference.PavedWithManifest {
 	delete(exampleParams, "depends_on")
 	delete(exampleParams, "lifecycle")
-	transformFields(r, exampleParams, r.ExternalName.OmittedFields, "", generateRefs)
+	transformFields(r, exampleParams, r.ExternalName.OmittedFields, "", eg.generateReferences)
 	metadata := map[string]any{}
-	if addExampleLabel {
+	if eg.addExampleMetadata {
 		metadata["labels"] = map[string]string{
 			labelExampleName: eName,
 		}
@@ -212,9 +241,12 @@ func (eg *Generator) Generate(group, version string, r *config.Resource) error {
 	groupPrefix := strings.ToLower(strings.Split(group, ".")[0])
 	// e.g. gvk = ec2/v1beta1/instance
 	gvk := fmt.Sprintf("%s/%s/%s", groupPrefix, version, strings.ToLower(r.Kind))
-	pm := paveCRManifest(rm.Examples[0].Paved.UnstructuredContent(), r, rm.Examples[0].Name, group, version, gvk, eg.addExampleMetadata, eg.generateReferences)
-	manifestDir := filepath.Join(eg.rootDir, "examples-generated", groupPrefix, r.Version)
-	pm.ManifestPath = filepath.Join(manifestDir, fmt.Sprintf("%s.yaml", strings.ToLower(r.Kind)))
+	pm := eg.paveCRManifest(rm.Examples[0].Paved.UnstructuredContent(), r, rm.Examples[0].Name, group, version, gvk)
+	pm.ManifestPath = filepath.Join(eg.rootDir, eg.manifestPath)
+	if eg.manifestPath == "" {
+		manifestDir := filepath.Join(eg.rootDir, "examples-generated", groupPrefix, r.Version)
+		pm.ManifestPath = filepath.Join(manifestDir, fmt.Sprintf("%s.yaml", strings.ToLower(r.Kind)))
+	}
 	eg.resources[fmt.Sprintf("%s.%s", r.Name, reference.Wildcard)] = pm
 	return nil
 }
