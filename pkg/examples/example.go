@@ -191,6 +191,10 @@ func (eg *Generator) Generate(group, version string, r *config.Resource) error {
 	return nil
 }
 
+func (eg *Generator) GetPavedWithManifest(resourceName string) *reference.PavedWithManifest {
+	return eg.resources[resourceName]
+}
+
 func getHierarchicalName(prefix, name string) string {
 	if prefix == "" {
 		return name
