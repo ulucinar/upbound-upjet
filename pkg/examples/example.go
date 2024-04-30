@@ -242,7 +242,7 @@ func (eg *Generator) Generate(group, version string, r *config.Resource) error {
 	// e.g. gvk = ec2/v1beta1/instance
 	gvk := fmt.Sprintf("%s/%s/%s", groupPrefix, version, strings.ToLower(r.Kind))
 	pm := eg.paveCRManifest(rm.Examples[0].Paved.UnstructuredContent(), r, rm.Examples[0].Name, group, version, gvk)
-	pm.ManifestPath = filepath.Join(eg.rootDir, eg.manifestPath)
+	pm.ManifestPath = eg.manifestPath
 	if eg.manifestPath == "" {
 		manifestDir := filepath.Join(eg.rootDir, "examples-generated", groupPrefix, r.Version)
 		pm.ManifestPath = filepath.Join(manifestDir, fmt.Sprintf("%s.yaml", strings.ToLower(r.Kind)))
