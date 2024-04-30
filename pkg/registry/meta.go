@@ -98,7 +98,7 @@ func (r *Resource) scrapeExamples(doc *html.Node, codeElXPath string, path strin
 		if len(resourceName) == 0 {
 			resourceName = getResourceNameFromPath(path, resourcePrefix)
 		}
-		if err := r.findExampleBlock(f, body.Blocks, &resourceName, true); err != nil {
+		if err := r.FindExampleBlock(f, body.Blocks, &resourceName, true); err != nil {
 			return err
 		}
 		r.Name = resourceName
@@ -173,11 +173,9 @@ func convertManifest2JSON(file *hcl.File, b *hclsyntax.Block) (string, error) {
 	return out.String(), nil
 }
 
-func (r *Resource) FindExampleBlock(file *hcl.File, blocks hclsyntax.Blocks, resourceName *string, exactMatch bool) error {
-	return r.findExampleBlock(file, blocks, resourceName, exactMatch)
-}
-
-func (r *Resource) findExampleBlock(file *hcl.File, blocks hclsyntax.Blocks, resourceName *string, exactMatch bool) error { //nolint:gocyclo
+// FindExampleBlock finds an example manifest block for the specified
+// resourceName (e.g., aws_vpc) in the given HCL file.
+func (r *Resource) FindExampleBlock(file *hcl.File, blocks hclsyntax.Blocks, resourceName *string, exactMatch bool) error { //nolint:gocyclo
 	dependencies := make(map[string]string)
 	for _, b := range blocks {
 		depKey := fmt.Sprintf("%s.%s", b.Labels[0], b.Labels[1])
@@ -209,7 +207,7 @@ func (r *Resource) findExampleBlock(file *hcl.File, blocks hclsyntax.Blocks, res
 	}
 
 	if len(r.Examples) == 0 && exactMatch {
-		return r.findExampleBlock(file, blocks, resourceName, false)
+		return r.FindExampleBlock(file, blocks, resourceName, false)
 	}
 	return nil
 }
