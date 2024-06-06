@@ -143,7 +143,8 @@ func (ac *APICallbacks) callbackFn(name, op string) terraform.CallbackFn {
 		if ac.enableStatusUpdates {
 			tr.SetConditions(resource.AsyncOperationFinishedCondition())
 		}
-		uErr := errors.Wrapf(ac.kube.Status().Update(ctx, tr), errUpdateStatusFmt, tr.GetObjectKind().GroupVersionKind().String(), name, op)
+		o := tr.DeepCopyObject().(client.Object)
+		uErr := errors.Wrapf(ac.kube.Status().Update(ctx, o), errUpdateStatusFmt, tr.GetObjectKind().GroupVersionKind().String(), name, op)
 		if ac.eventHandler != nil {
 			rateLimiter := handler.NoRateLimiter
 			switch {
