@@ -119,21 +119,29 @@ func (n *terraformPluginSDKAsyncExternal) Observe(ctx context.Context, mg xpreso
 	if n.opTracker.LastOperation.IsRunning() {
 		n.logger.WithValues("opType", n.opTracker.LastOperation.Type).Debug("ongoing async operation")
 		return managed.ExternalObservation{
-			ResourceExists:   true,
-			ResourceUpToDate: true,
+			//ResourceExists:   true,
+			//ResourceUpToDate: true,
+			AsyncOperation: managed.AsyncOperation{
+				AsyncPhase: n.opTracker.LastOperation.Phase(),
+			},
 		}, nil
 	}
-	n.opTracker.LastOperation.Clear(true)
 
 	o, err := n.terraformPluginSDKExternal.Observe(ctx, mg)
+	if err == nil {
+		o.AsyncPhase = n.opTracker.LastOperation.CompletionPhase()
+		o.AsyncError = n.opTracker.LastOperation.Error()
+	}
 	// clear any previously reported LastAsyncOperation error condition here,
-	// because there are no pending updates on the existing resource and it's
+	// because there are no pending updates on the existing resource, and it's
 	// not scheduled to be deleted.
 	if err == nil && o.ResourceExists && o.ResourceUpToDate && !meta.WasDeleted(mg) {
 		mg.(resource.Terraformed).SetConditions(resource.LastAsyncOperationCondition(nil))
 		mg.(resource.Terraformed).SetConditions(xpv1.ReconcileSuccess())
 		n.opTracker.LastOperation.Clear(false)
+		return o, nil
 	}
+	n.opTracker.LastOperation.Clear(true)
 	return o, err
 }
 
@@ -171,7 +179,11 @@ func (n *terraformPluginSDKAsyncExternal) Create(_ context.Context, mg xpresourc
 		_, ph.err = n.terraformPluginSDKExternal.Create(ctx, mg)
 	}()
 
-	return managed.ExternalCreation{}, n.opTracker.LastOperation.Error()
+	return managed.ExternalCreation{
+		AsyncOperation: managed.AsyncOperation{
+			AsyncPhase: managed.AsyncCreatePending,
+		},
+	}, n.opTracker.LastOperation.Error()
 }
 
 func (n *terraformPluginSDKAsyncExternal) Update(_ context.Context, mg xpresource.Managed) (managed.ExternalUpdate, error) { //nolint:contextcheck // we intentionally use a fresh context for the async operation

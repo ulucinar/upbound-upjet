@@ -7,11 +7,21 @@ package terraform
 import (
 	"sync"
 	"time"
+
+	"github.com/crossplane/crossplane-runtime/v2/pkg/reconciler/managed"
+)
+
+type OperationType string
+
+const (
+	CreateOperation OperationType = "create"
+	UpdateOperation OperationType = "update"
+	DeleteOperation OperationType = "delete"
 )
 
 // Operation is the representation of a single Terraform CLI operation.
 type Operation struct {
-	Type string
+	Type OperationType
 
 	startTime *time.Time
 	endTime   *time.Time
@@ -19,10 +29,46 @@ type Operation struct {
 	mu        sync.RWMutex
 }
 
+func (o *Operation) Phase() managed.AsyncPhase {
+	switch o.Type {
+	case CreateOperation:
+		return managed.AsyncCreatePending
+	case UpdateOperation:
+		return managed.AsyncUpdatePending
+	case DeleteOperation:
+		return managed.AsyncDeletePending
+	}
+	return ""
+}
+
+func (o *Operation) CompletionPhase() managed.AsyncPhase {
+	switch o.Type {
+	case CreateOperation:
+		if o.err == nil {
+			return managed.AsyncCreateSucceeded
+		} else {
+			return managed.AsyncCreateFailed
+		}
+	case UpdateOperation:
+		if o.err == nil {
+			return managed.AsyncUpdateSucceeded
+		} else {
+			return managed.AsyncUpdateFailed
+		}
+	case DeleteOperation:
+		if o.err == nil {
+			return managed.AsyncDeleteSucceeded
+		} else {
+			return managed.AsyncDeleteFailed
+		}
+	}
+	return ""
+}
+
 // MarkStart marks the operation as started atomically after checking
 // no previous operation is already running.
 // Returns `false` if a previous operation is still in progress.
-func (o *Operation) MarkStart(t string) bool {
+func (o *Operation) MarkStart(t OperationType) bool {
 	o.mu.Lock()
 	defer o.mu.Unlock()
 	if o.startTime != nil && o.endTime == nil {

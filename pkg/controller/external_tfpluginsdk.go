@@ -527,7 +527,7 @@ func (n *terraformPluginSDKExternal) Observe(ctx context.Context, mg xpresource.
 	}
 
 	var connDetails managed.ConnectionDetails
-	specUpdateRequired := false
+	lateInitialized := false
 	if resourceExists {
 		if mg.GetCondition(xpv1.TypeReady).Status == corev1.ConditionUnknown ||
 			mg.GetCondition(xpv1.TypeReady).Status == corev1.ConditionFalse {
@@ -552,9 +552,8 @@ func (n *terraformPluginSDKExternal) Observe(ctx context.Context, mg xpresource.
 			return managed.ExternalObservation{}, errors.Wrap(err, "cannot marshal the attributes of the new state for late-initialization")
 		}
 
-		policyHasLateInit := policySet.HasAny(xpv1.ManagementActionLateInitialize, xpv1.ManagementActionAll)
-		if policyHasLateInit {
-			specUpdateRequired, err = mg.(resource.Terraformed).LateInitialize(buff)
+		if policySet.HasAny(xpv1.ManagementActionLateInitialize, xpv1.ManagementActionAll) {
+			lateInitialized, err = mg.(resource.Terraformed).LateInitialize(buff)
 			if err != nil {
 				return managed.ExternalObservation{}, errors.Wrap(err, "cannot late-initialize the managed resource")
 			}
@@ -568,14 +567,12 @@ func (n *terraformPluginSDKExternal) Observe(ctx context.Context, mg xpresource.
 		if !hasDiff {
 			n.metricRecorder.SetReconcileTime(metrics.NameForManaged(mg))
 		}
-		if !specUpdateRequired {
+		if !lateInitialized {
 			resource.SetUpToDateCondition(mg, !hasDiff)
 		}
 		// check for an external-name change
-		if nameChanged, err := n.setExternalName(mg, stateValueMap); err != nil {
+		if _, err := n.setExternalName(mg, stateValueMap); err != nil {
 			return managed.ExternalObservation{}, errors.Wrapf(err, "failed to set the external-name of the managed resource during observe")
-		} else {
-			specUpdateRequired = specUpdateRequired || nameChanged
 		}
 	}
 
@@ -583,7 +580,7 @@ func (n *terraformPluginSDKExternal) Observe(ctx context.Context, mg xpresource.
 		ResourceExists:          resourceExists,
 		ResourceUpToDate:        !hasDiff,
 		ConnectionDetails:       connDetails,
-		ResourceLateInitialized: specUpdateRequired,
+		ResourceLateInitialized: lateInitialized,
 	}, nil
 }
 
