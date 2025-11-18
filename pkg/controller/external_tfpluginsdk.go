@@ -607,6 +607,8 @@ func (n *terraformPluginSDKExternal) setExternalName(mg xpresource.Managed, stat
 func (n *terraformPluginSDKExternal) Create(ctx context.Context, mg xpresource.Managed) (managed.ExternalCreation, error) { //nolint:gocyclo // easier to follow as a unit
 	n.logger.Debug("Creating the external resource")
 	start := time.Now()
+	fmt.Println("Sleeping for 3 minutes...")
+	time.Sleep(3 * time.Minute)
 	newState, diag := n.resourceSchema.Apply(ctx, n.opTracker.GetTfState(), n.instanceDiff, n.ts.Meta)
 	metrics.ExternalAPITime.WithLabelValues("create").Observe(time.Since(start).Seconds())
 	if diag != nil && diag.HasError() {
